@@ -9,7 +9,10 @@ You can also run tests to evaluate the effects of various hyper-parameters on th
 
 Check out the images folder for pre-generated graphs and visualizations
 
-**_ Available Agents _**
+### Mountain Car Problem (Discrete) ###
+
+*** Available Agents ***
+The following are the available agent
     - Semi-Gradient n-step SARSA agent
     - Semi-Gradient n-step Expected SARSA agent
     - Semi-Gradient Q-Learning agent
