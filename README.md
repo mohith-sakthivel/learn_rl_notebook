@@ -12,7 +12,8 @@ Check out the images folder for pre-generated graphs and visualizations
 ### Example Enviroments
 The repository contains examples implemented on the following environments
 
-    - MountainCar-v0
+    - MountainCar-v01
+    - MountainCarContinuous-v0
     - CartPole-v0
 
 ## Available Agents
@@ -23,4 +24,5 @@ The repository contains examples implemented on the following environments
     - Semi-Gradient Q-Learning agent
 
 ### Deep RL 
+    - REINFORCE
     - Actor-Critic

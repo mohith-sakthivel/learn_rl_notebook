@@ -7,7 +7,7 @@ from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 
 
-class Critic(nn.Module):
+class ValueFunction(nn.Module):
     def __init__(self, layer_dims, activation):
         super().__init__()
         layers = []
@@ -17,12 +17,12 @@ class Critic(nn.Module):
         self.value_fn = nn.Sequential(*layers)
 
     def forward(self, state):
-        return self.value_fn(state).squeeze()
+        return self.value_fn(state).squeeze(dim=-1)
 
 
-class GaussianActor(nn.Module):
+class GaussianPolicy(nn.Module):
     """
-    Gaussian Actor for continuous action spaces
+    Gaussian policy for continuous action spaces
     """
     def __init__(self, layer_dims, activ, out_activ):
         super().__init__()
@@ -33,8 +33,7 @@ class GaussianActor(nn.Module):
                 activ() if i != (len(layer_dims)-2) else out_activ())
         self.mean_net = nn.Sequential(*layers)
         std_log = -0.5 * np.ones(layer_dims[-1], dtype=np.float32)
-        self.std_log = nn.Parameter(
-                            torch.from_numpy(std_log, device=self.device))
+        self.std_log = nn.Parameter(torch.from_numpy(std_log))
 
     def forward(self, state):
         mean = self.mean_net(state)
@@ -43,12 +42,12 @@ class GaussianActor(nn.Module):
 
     def get_action(self, state):
         with torch.no_grad():
-            return self.forward(state).sample().numpy()
+            return self.forward(state).sample().tolist()
 
 
-class CategoricalActor(nn.Module):
+class CategoricalPolicy(nn.Module):
     """
-    Categorical Actor for one dimensional discrete action spaces
+    Categorical policy for one dimensional discrete action spaces
     """
 
     def __init__(self, layer_dims, activ, out_activ):
@@ -68,13 +67,13 @@ class CategoricalActor(nn.Module):
             return self.forward(state).sample().item()
 
 
-class ActorCritic():
+class PolicyGradient():
     """
-    A policy gradient agent based on Actor-Critic algorithm
+    A policy gradient agent implementation
     """
 
-    def __init__(self, state_dim, act_dim, act_hid_lyrs=[16],
-                 critic_hid_lyrs=[16], actor_lr=0.001, critic_lr=0.005,
+    def __init__(self, state_dim, act_dim, pol_hid_lyrs=[16],
+                 val_hid_lyrs=[16], pol_lr=0.001, val_lr=0.005,
                  batch_size=5000, is_discrete=False, seed=None, use_gpu=True):
         if seed is not None:
             np.random.seed(seed)
@@ -82,32 +81,36 @@ class ActorCritic():
         self.is_discrete = is_discrete
         self.state_dim = state_dim
         self.act_dim = act_dim
-        self.actor_lr = actor_lr
-        self.critic_lr = critic_lr
+        self.pol_lr = pol_lr
+        self.val_lr = val_lr
         self.batch_size = batch_size
         # calculate layer dimensions
-        actor_layers = [self.state_dim] + act_hid_lyrs + [self.act_dim]
-        critic_layers = [self.state_dim] + critic_hid_lyrs + [1]
+        pol_layers = [self.state_dim] + pol_hid_lyrs + [self.act_dim]
+        val_layers = [self.state_dim] + val_hid_lyrs + [1]
         # instantiate the pytorch nn modules
         if self.is_discrete:
-            self.actor = CategoricalActor(actor_layers, nn.Tanh, nn.Identity)
+            self.policy = CategoricalPolicy(pol_layers, nn.Tanh, nn.Identity)
         else:
-            self.actor = GaussianActor(actor_layers, nn.Tanh, nn.Identity)
-        self.critic = Critic(critic_layers, nn.Tanh)
+            self.policy = GaussianPolicy(pol_layers, nn.Tanh, nn.Identity)
+        self.value_fn = ValueFunction(val_layers, nn.Tanh)
         # set device for computation
         if torch.cuda.is_available() and use_gpu:
             self.device = torch.device("cuda")
-            self.actor.to(self.device)
-            self.critic.to(self.device)
+            self.policy.to(self.device)
+            self.value_fn.to(self.device)
         else:
             self.device = torch.device("cpu")
         # setup optimizers
-        self.actor_optim = Adam(self.actor.parameters(), self.actor_lr)
-        self.critic_optim = Adam(self.critic.parameters(), self.critic_lr)
+        self.policy_optim = Adam(self.policy.parameters(), self.pol_lr)
+        self.value_optim = Adam(self.value_fn.parameters(), self.val_lr)
         # expereience buffers
         self.state_buffer = []
         self.action_buffer = []
         self.reward_buffer = []
+
+    def compute_grad(self, terminal=True):
+        """ Calculate the gradient of the policy and value fn """
+        raise NotImplementedError
 
     def start(self, state):
         """
@@ -117,40 +120,9 @@ class ActorCritic():
         self.state_buffer.append(state)
         state_tensor = torch.as_tensor(
                             state, device=self.device, dtype=torch.float32)
-        action = self.actor.get_action(state_tensor)
+        action = self.policy.get_action(state_tensor)
         self.action_buffer.append(action)
         return action
-
-    def compute_grad(self):
-        """
-        Computes the loss function for the actor and crtic
-        """
-        # convert state and action into tensor
-        state = torch.tensor(
-                self.state_buffer, device=self.device, dtype=torch.float32)
-        action = torch.tensor(
-                self.action_buffer, device=self.device, dtype=torch.float32)
-        # calculate returns from rewards
-        returns = np.zeros_like(self.reward_buffer, dtype=np.float32)
-        returns[-1] = self.reward_buffer[-1]
-        for i in range(len(returns)-2, -1, -1):
-            returns[i] = self.reward_buffer[i] + returns[i+1]
-        returns = torch.as_tensor(returns,
-                                  device=self.device, dtype=torch.float32)
-        # calculate critic loss
-        state_values = self.critic(state)
-        critic_loss = nn.functional.mse_loss(state_values, returns)
-        # calculate actor loss
-        distribution = self.actor(state)
-        if self.is_discrete:
-            log_action_probs = distribution.log_prob(action)
-        else:
-            log_action_probs = distribution.log_prob(action)
-        actor_loss = -torch.mean(
-            log_action_probs * (returns-state_values.detach()))
-        # print('Actor Loss: ', actor_loss.item(),
-        #       "\tCritic Loss: ", critic_loss.item())
-        return actor_loss, critic_loss
 
     def take_step(self, reward, state):
         """
@@ -158,26 +130,25 @@ class ActorCritic():
         Performs policy update if experience buffer is full
         """
         self.reward_buffer.append(reward)
+        self.state_buffer.append(state)
         state_tensor = torch.as_tensor(
                             state, device=self.device, dtype=torch.float32)
-        action = self.actor.get_action(state_tensor)
+        action = self.policy.get_action(state_tensor)
+        self.action_buffer.append(action)
         # check if experience buffer is full
         if len(self.reward_buffer) > self.batch_size:
-            # Perform actor-critic update
-            self.reward_buffer[-1] += self.critic(state_tensor).item()
-            self.actor_optim.zero_grad()
-            self.critic_optim.zero_grad()
-            actor_loss, critic_loss = self.compute_grad()
-            actor_loss.backward()
-            critic_loss.backward()
-            self.actor_optim.step()
-            self.critic_optim.step()
+            # Perform policy-value function update
+            self.policy_optim.zero_grad()
+            self.value_optim.zero_grad()
+            policy_loss, value_fn_loss = self.compute_grad(terminal=False)
+            policy_loss.backward()
+            value_fn_loss.backward()
+            self.policy_optim.step()
+            self.value_optim.step()
             # Empty buffers
-            self.state_buffer.clear()
-            self.action_buffer.clear()
+            self.state_buffer = self.state_buffer[-1:]
+            self.action_buffer = self.action_buffer[-1:]
             self.reward_buffer.clear()
-        self.state_buffer.append(state)
-        self.action_buffer.append(action)
         return action
 
     def end(self, reward):
@@ -186,16 +157,98 @@ class ActorCritic():
         and resets variables for next episode
         """
         self.reward_buffer.append(reward)
-        # Perform actor-critic update
-        self.actor_optim.zero_grad()
-        self.critic_optim.zero_grad()
-        actor_loss, critic_loss = self.compute_grad()
-        actor_loss.backward()
-        critic_loss.backward()
-        self.actor_optim.step()
-        self.critic_optim.step()
+        # Perform policy-value function update
+        self.policy_optim.zero_grad()
+        self.value_optim.zero_grad()
+        policy_loss, value_fn_loss = self.compute_grad(terminal=True)
+        policy_loss.backward()
+        value_fn_loss.backward()
+        self.policy_optim.step()
+        self.value_optim.step()
         # Empty buffers
         self.state_buffer.clear()
         self.action_buffer.clear()
         self.reward_buffer.clear()
-        return actor_loss.item(), critic_loss.item()
+        return policy_loss.item(), value_fn_loss.item()
+
+
+class REINFORCE(PolicyGradient):
+    """
+    A policy gradient agent based on REINFORCE algorithm
+    """
+
+    def compute_grad(self, terminal=True):
+        """
+        Computes the loss function for the policy and gradient
+        """
+        # convert state and action into tensor
+        samples = len(self.reward_buffer)
+        state = torch.tensor(
+                             self.state_buffer,
+                             device=self.device, dtype=torch.float32)
+        action = torch.tensor(
+                              self.action_buffer[:samples],
+                              device=self.device, dtype=torch.float32)
+        # calculate returns from rewards
+        returns = np.zeros_like(self.reward_buffer, dtype=np.float32)
+        returns[-1] = self.reward_buffer[-1]
+        if not terminal:
+            with torch.no_grad():
+                returns[-1] += self.value_fn(state[-1]).item()
+        for i in range(len(returns)-2, -1, -1):
+            returns[i] = self.reward_buffer[i] + returns[i+1]
+        returns = torch.as_tensor(returns,
+                                  device=self.device, dtype=torch.float32)
+        # calculate value function loss
+        state_values = self.value_fn(state[:samples])
+        value_fn_loss = nn.functional.mse_loss(state_values, returns)
+        # calculate policy loss
+        distribution = self.policy(state[:samples])
+        if self.is_discrete:
+            log_action_probs = distribution.log_prob(action)
+        else:
+            log_action_probs = distribution.log_prob(action).sum()
+        policy_loss = -torch.mean(
+                            log_action_probs * (returns-state_values.detach()))
+        return policy_loss, value_fn_loss
+
+
+class ActorCritic(PolicyGradient):
+    """
+    A policy gradient agent based on Actor_Critic algorithm
+    """
+
+    def compute_grad(self, terminal=True):
+        """
+        Computes the loss function for the policy and gradient
+        """
+        # convert state and action into tensor
+        samples = len(self.reward_buffer)
+        state = torch.tensor(
+                             self.state_buffer,
+                             device=self.device, dtype=torch.float32)
+        action = torch.tensor(
+                              self.action_buffer[:samples],
+                              device=self.device, dtype=torch.float32)
+        returns = torch.tensor(
+                              self.reward_buffer,
+                              device=self.device, dtype=torch.float32)
+        # calculate state values
+        state_values = self.value_fn(state)
+        with torch.no_grad():
+            if not terminal:
+                returns[-1] += state_values[-1]
+            for i in range(len(returns)-2, -1, -1):
+                returns[i] += state_values[i+1]
+        # calculate value function loss
+        value_fn_loss = nn.functional.mse_loss(state_values[:samples], returns)
+        # calculate policy loss
+        distribution = self.policy(state[:samples])
+        if self.is_discrete:
+            log_action_probs = distribution.log_prob(action)
+        else:
+            log_action_probs = distribution.log_prob(action).sum()
+        policy_loss = -torch.mean(
+                                  log_action_probs *
+                                  (returns-state_values[:samples].detach()))
+        return policy_loss, value_fn_loss
