@@ -9,12 +9,18 @@ You can also run tests to evaluate the effects of various hyper-parameters on th
 
 Check out the images folder for pre-generated graphs and visualizations
 
-## Enviroments
+### Example Enviroments
+The repository contains examples implemented on the following environments
 
-### Mountain Car Problem (Discrete)
+    - MountainCar-v0
+    - CartPole-v0
 
-#### Available Agents
+## Available Agents
 
+### Classical RL
     - Semi-Gradient n-step SARSA agent
     - Semi-Gradient n-step Expected SARSA agent
     - Semi-Gradient Q-Learning agent
+
+### Deep RL 
+    - Actor-Critic
