@@ -74,6 +74,7 @@ class PolicyGradient():
 
     def __init__(self, state_dim, act_dim, pol_hid_lyrs=[16],
                  val_hid_lyrs=[16], pol_lr=0.001, val_lr=0.005,
+                 pol_act=nn.Tanh, val_act=nn.Tanh, discount=1,
                  batch_size=5000, is_discrete=False, seed=None, use_gpu=True):
         if seed is not None:
             np.random.seed(seed)
@@ -83,16 +84,17 @@ class PolicyGradient():
         self.act_dim = act_dim
         self.pol_lr = pol_lr
         self.val_lr = val_lr
+        self.discount = discount
         self.batch_size = batch_size
         # calculate layer dimensions
         pol_layers = [self.state_dim] + pol_hid_lyrs + [self.act_dim]
         val_layers = [self.state_dim] + val_hid_lyrs + [1]
         # instantiate the pytorch nn modules
         if self.is_discrete:
-            self.policy = CategoricalPolicy(pol_layers, nn.Tanh, nn.Identity)
+            self.policy = CategoricalPolicy(pol_layers, pol_act, nn.Identity)
         else:
-            self.policy = GaussianPolicy(pol_layers, nn.Tanh, nn.Identity)
-        self.value_fn = ValueFunction(val_layers, nn.Tanh)
+            self.policy = GaussianPolicy(pol_layers, pol_act, nn.Identity)
+        self.value_fn = ValueFunction(val_layers, val_act)
         # set device for computation
         if torch.cuda.is_available() and use_gpu:
             self.device = torch.device("cuda")
@@ -194,9 +196,9 @@ class REINFORCE(PolicyGradient):
         returns[-1] = self.reward_buffer[-1]
         if not terminal:
             with torch.no_grad():
-                returns[-1] += self.value_fn(state[-1]).item()
+                returns[-1] += self.discount * self.value_fn(state[-1]).item()
         for i in range(len(returns)-2, -1, -1):
-            returns[i] = self.reward_buffer[i] + returns[i+1]
+            returns[i] = self.reward_buffer[i] + self.discount * returns[i+1]
         returns = torch.as_tensor(returns,
                                   device=self.device, dtype=torch.float32)
         # calculate value function loss
@@ -237,9 +239,9 @@ class ActorCritic(PolicyGradient):
         state_values = self.value_fn(state)
         with torch.no_grad():
             if not terminal:
-                returns[-1] += state_values[-1]
+                returns[-1] += self.discount * state_values[-1]
             for i in range(len(returns)-2, -1, -1):
-                returns[i] += state_values[i+1]
+                returns[i] += self.discount * state_values[i+1]
         # calculate value function loss
         value_fn_loss = nn.functional.mse_loss(state_values[:samples], returns)
         # calculate policy loss
