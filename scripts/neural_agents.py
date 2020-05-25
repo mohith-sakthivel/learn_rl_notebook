@@ -27,6 +27,15 @@ class GaussianPolicy(nn.Module):
     def __init__(self, layer_dims, activ, out_activ):
         super().__init__()
         layers = []
+        # for i in range(len(layer_dims)-1):
+        #     if i != (len(layer_dims)-2):
+        #         layers.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
+        #         layers.append(activ())
+        #     else:
+        #         layers.append(nn.Linear(layer_dims[i], 2*layer_dims[i+1]))
+        #         layers.append(out_activ())
+        # self.neural_net = nn.Sequential(*layers)
+        # self.num_actions = layer_dims[-1]
         for i in range(len(layer_dims)-1):
             layers.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
             layers.append(
@@ -36,6 +45,9 @@ class GaussianPolicy(nn.Module):
         self.std_log = nn.Parameter(torch.from_numpy(std_log))
 
     def forward(self, state):
+        # out = self.neural_net(state)
+        # mean, std = out.split(self.num_actions, dim=-1)
+        # return Normal(mean, std)
         mean = self.mean_net(state)
         std = torch.exp(self.std_log)
         return Normal(mean, std)
@@ -138,7 +150,7 @@ class PolicyGradient():
         action = self.policy.get_action(state_tensor)
         self.action_buffer.append(action)
         # check if experience buffer is full
-        if len(self.reward_buffer) > self.batch_size:
+        if len(self.reward_buffer) >= self.batch_size:
             # Perform policy-value function update
             self.policy_optim.zero_grad()
             self.value_optim.zero_grad()
@@ -209,7 +221,7 @@ class REINFORCE(PolicyGradient):
         if self.is_discrete:
             log_action_probs = distribution.log_prob(action)
         else:
-            log_action_probs = distribution.log_prob(action).sum()
+            log_action_probs = distribution.log_prob(action).sum(dim=-1)
         policy_loss = -torch.mean(
                             log_action_probs * (returns-state_values.detach()))
         return policy_loss, value_fn_loss
@@ -249,7 +261,7 @@ class ActorCritic(PolicyGradient):
         if self.is_discrete:
             log_action_probs = distribution.log_prob(action)
         else:
-            log_action_probs = distribution.log_prob(action).sum()
+            log_action_probs = distribution.log_prob(action).sum(dim=-1)
         policy_loss = -torch.mean(
                                   log_action_probs *
                                   (returns-state_values[:samples].detach()))
