@@ -45,7 +45,7 @@ class BaseAgent():
     Base class for implementing classic RL agents
     """
     def __init__(self, obs_limits, num_actions, n_step=1, epsilon=0.1, step_size=0.5,
-                 discount=1, seed=None, min_step_size=None, num_tilings=8, num_tiles=None):
+                 discount=1, seed=None, decay_factor=None, num_tilings=8, num_tiles=None):
         # set seed if provided
         self.seed = seed
         self.policy_rand_generator = np.random.default_rng(self.seed)
@@ -60,8 +60,9 @@ class BaseAgent():
         self.discount = discount
         self.step_size = step_size/self.tc.num_tilings
         self.d_step_size = self.step_size
-        self.min_step_size = min_step_size
+        self.decay_factor = decay_factor
         self.value_function = np.zeros((self.num_actions, self.tc.iht_size, self.tc.num_tilings))
+        self.episode = 0
         # create experience buffers
         self.state_buffer = deque()
         self.action_buffer = deque()
@@ -87,6 +88,7 @@ class BaseAgent():
 
     def start(self, state):
         """ Start the agent for the episode """
+        self.episode += 1
         self.state_buffer.append(state)
         self.action_buffer.append(self.agent_policy(state))
         return self.action_buffer[0]
@@ -122,6 +124,8 @@ class BaseAgent():
         self.action_buffer.clear()
         self.reward_buffers.clear()
         self.time_step = 0
+        if self.decay_factor:
+            self.d_step_size = self.d_step_size * self.decay_factor
 
 
 class SARSA_agent(BaseAgent):
