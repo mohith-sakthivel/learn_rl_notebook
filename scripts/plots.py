@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib
 from matplotlib import cm
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 from IPython import display
 
@@ -34,11 +35,11 @@ def plot_var_history(var_history, labels, show_confidence=False,
     # Graph foramtting
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
+    if log_scale:
+        ax.set_yscale("log")
     if y_ticks:
         ax.set_yticks(y_ticks)
         ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    if log_scale:
-        ax.set_yscale("log")
     # Plot values over different setting
     for plot_no in range(var_means.shape[0]):
         ax.plot(var_means[plot_no], color=color_list[plot_no],

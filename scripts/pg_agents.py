@@ -26,30 +26,32 @@ class GaussianPolicy(nn.Module):
     """
     def __init__(self, layer_dims, activ, out_activ):
         super().__init__()
-        layers = []
-        # for i in range(len(layer_dims)-1):
-        #     if i != (len(layer_dims)-2):
-        #         layers.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
-        #         layers.append(activ())
-        #     else:
-        #         layers.append(nn.Linear(layer_dims[i], 2*layer_dims[i+1]))
-        #         layers.append(out_activ())
-        # self.neural_net = nn.Sequential(*layers)
-        # self.num_actions = layer_dims[-1]
+        mean_layers = [None] * (2 * (len(layer_dims)-1))
+        std_layers = [None] * (2 * (len(layer_dims)-1))
         for i in range(len(layer_dims)-1):
-            layers.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
-            layers.append(
-                activ() if i != (len(layer_dims)-2) else out_activ())
-        self.mean_net = nn.Sequential(*layers)
-        std_log = -0.5 * np.ones(layer_dims[-1], dtype=np.float32)
-        self.std_log = nn.Parameter(torch.from_numpy(std_log))
+            mean_layers[2*i] = nn.Linear(layer_dims[i], layer_dims[i+1])
+            if i < (len(layer_dims)-1)//2:
+                std_layers[2*i] = mean_layers[2*i]
+            else:
+                std_layers[2*i] = nn.Linear(layer_dims[i], layer_dims[i+1])
+            mean_layers[(2*i)+1] = std_layers[(2*i)+1] = \
+                activ() if i != (len(layer_dims)-2) else out_activ()
+        self.mean_net = nn.Sequential(*mean_layers)
+        self.log_std_net = nn.Sequential(*std_layers)
+
+        # layers = []
+        # for i in range(len(layer_dims)-1):
+        #     layers.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
+        #     layers.append(
+        #         activ() if i != (len(layer_dims)-2) else out_activ())
+        # self.mean_net = nn.Sequential(*layers)
+        # std_log = -0.5 * np.ones(layer_dims[-1], dtype=np.float32)
+        # self.std_log = nn.Parameter(torch.from_numpy(std_log))
 
     def forward(self, state):
-        # out = self.neural_net(state)
-        # mean, std = out.split(self.num_actions, dim=-1)
-        # return Normal(mean, std)
         mean = self.mean_net(state)
-        std = torch.exp(self.std_log)
+        std = torch.exp(self.log_std_net(state))
+        # std = torch.exp(self.std_log)
         return Normal(mean, std)
 
     def get_action(self, state):
@@ -84,9 +86,9 @@ class PolicyGradient():
     A policy gradient agent implementation
     """
 
-    def __init__(self, state_dim, act_dim, pol_hid_lyrs=[16],
+    def __init__(self, state_dim, act_dim, pol_hid_lyrs=[16], baseline=True,
                  val_hid_lyrs=[16], pol_lr=0.001, val_lr=0.005,
-                 pol_act=nn.Tanh, val_act=nn.Tanh, discount=1,
+                 pol_act=nn.Tanh, val_act=nn.Tanh, discount=1, weight_decay=0,
                  batch_size=5000, is_discrete=False, seed=None, use_gpu=True):
         if seed is not None:
             np.random.seed(seed)
@@ -98,6 +100,7 @@ class PolicyGradient():
         self.val_lr = val_lr
         self.discount = discount
         self.batch_size = batch_size
+        self.baseline = baseline
         # calculate layer dimensions
         pol_layers = [self.state_dim] + pol_hid_lyrs + [self.act_dim]
         val_layers = [self.state_dim] + val_hid_lyrs + [1]
@@ -115,8 +118,10 @@ class PolicyGradient():
         else:
             self.device = torch.device("cpu")
         # setup optimizers
-        self.policy_optim = Adam(self.policy.parameters(), self.pol_lr)
-        self.value_optim = Adam(self.value_fn.parameters(), self.val_lr)
+        self.policy_optim = Adam(self.policy.parameters(),
+                                 self.pol_lr, weight_decay=weight_decay)
+        self.value_optim = Adam(self.value_fn.parameters(),
+                                self.val_lr, weight_decay=weight_decay)
         # expereience buffers
         self.state_buffer = []
         self.action_buffer = []
@@ -222,8 +227,11 @@ class REINFORCE(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        policy_loss = -torch.mean(
+        if self.baseline:
+            policy_loss = -torch.mean(
                             log_action_probs * (returns-state_values.detach()))
+        else:
+            policy_loss = -torch.mean(log_action_probs * (returns))
         return policy_loss, value_fn_loss
 
 
