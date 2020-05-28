@@ -41,22 +41,3 @@ The goal of the notebook is to
 - Compare various RL algorithms
 
 The MountainCar-v0 problem is used to illustrate various key insights.
-
-### Optimal Agent for MountainCar-v0 (openAI lederboard)
-A highly optimized RL agent is presented for the MountainCar-v0 problem.
-
-Refer the last cell of the classic_rl_notebook (in the scripts folder)
-
-#### Hyperparameters:
-
-    - Algorithm: True Online SARSA (lambda) algorithm
-    - Step Size - 0.1 (Step size decays exponentially with a factor of 0.99 every timestep)
-    - lambda - 0.9
-    - epsilon - 0.001
-    - Tile Encoder - 16 Tilings with 8 tiles per state space dimension
-    - Discount - 1
-    
-
-#### Note: For further study on eligibility traces, turn to the Chapter-12 of Prof. Sutton's book.
-
-
