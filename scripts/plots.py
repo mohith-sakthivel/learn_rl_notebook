@@ -35,6 +35,7 @@ def plot_var_history(var_history, labels, show_confidence=False,
     # Graph foramtting
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
+    ax.grid(True)
     if log_scale:
         ax.set_yscale("log")
     if y_ticks:
@@ -56,6 +57,7 @@ def plot_var_history(var_history, labels, show_confidence=False,
                             color=color_list[plot_no], alpha=0.2)
     # Enable legend
     ax.legend()
+
 
 
 class FunctionPlot_3D():
