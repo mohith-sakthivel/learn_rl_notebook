@@ -235,12 +235,13 @@ class Q_agent(BaseAgent):
         self.action_buffer.popleft()
         self.reward_buffer.popleft()
 
+
 class TO_SARSA_Lambda_agent(BaseAgent):
     """
     Agent that learns using True Online SARSA (Lambda) Agent
     """
-    def __init__(self, *args, lambda_val=0.98, **kw_args):
-        super().__init__(*args, **kw_args)
+    def __init__(self, *args, lambda_val=0.98, **kwargs):
+        super().__init__(*args, **kwargs)
         self.lambda_val = lambda_val
 
     def start(self, state):
