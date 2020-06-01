@@ -59,7 +59,6 @@ def plot_var_history(var_history, labels, show_confidence=False,
     ax.legend()
 
 
-
 class FunctionPlot_3D():
     """
         Plots a 3-dimensional function graph

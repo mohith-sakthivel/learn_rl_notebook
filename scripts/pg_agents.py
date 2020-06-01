@@ -106,6 +106,9 @@ class PolicyGradient():
         self.batch_size = batch_size
         self.rewards_processed = 0
         self.baseline = baseline
+        self.num_trajectories = 0
+        self.reqd_trajectories = 10
+        self.num_epoch = 0
         # set device for computation
         if torch.cuda.is_available() and use_gpu:
             self.device = torch.device("cuda")
@@ -179,6 +182,7 @@ class PolicyGradient():
         """
         self.reward_buffer.append(reward)
         self.episode_reward += reward
+        self.num_trajectories += 1
         # Perform policy update
         policy_loss, value_fn_loss = self.compute_grad(True)
         # Empty buffers
@@ -187,6 +191,62 @@ class PolicyGradient():
         self.reward_buffer.clear()
         self.discount_buffer.clear()
         return self.episode_reward, policy_loss, value_fn_loss
+
+    def update_network(self):
+        """
+        Performs an update of the neural network parameters
+        """
+        # Update parameters
+        if ((self.rewards_processed+len(self.reward_buffer) >= self.batch_size)
+                or (self.num_trajectories >= self.reqd_trajectories)):
+            # Update policy
+            # Calculate mean loss
+            self.policy_loss = self.policy_loss / (self.rewards_processed +
+                                                   len(self.reward_buffer))
+            # Backpropagate
+            self.policy_loss.backward()
+            # Update parameters
+            self.policy_optim.step()
+            # Schedule learning rate
+            if self.policy_lr_sch.get_last_lr()[0] > self.min_pol_lr:
+                self.policy_lr_sch.step()
+            # Clear gradients
+            self.policy_optim.zero_grad()
+            # Reset variables
+            policy_loss = self.policy_loss.item()
+            # Update value function
+            if self.baseline:
+                # Calculate mean loss
+                self.value_fn_loss = \
+                    self.value_fn_loss/(self.rewards_processed +
+                                        len(self.reward_buffer))
+                # Backpropagate
+                self.value_fn_loss.backward()
+                # Update parameters
+                self.value_optim.step()
+                # Schedule learning rate
+                if self.value_lr_sch.get_last_lr()[0] > self.min_val_lr:
+                    self.value_lr_sch.step()
+                # Clear gradients
+                self.value_optim.zero_grad()
+                # Reset variables
+                value_fn_loss = self.value_fn_loss.item()
+
+            self.rewards_processed = 0
+            self.num_trajectories = 0
+            self.num_epoch += 1
+
+            self.policy_loss = torch.zeros(1, device=self.device,
+                                           dtype=torch.float32)
+            if self.baseline:
+                self.value_fn_loss = torch.zeros(1, device=self.device,
+                                                 dtype=torch.float32)
+                return policy_loss, value_fn_loss
+            else:
+                return policy_loss, None
+        else:
+            self.rewards_processed += len(self.reward_buffer)
+            return None, None
 
 
 class REINFORCE(PolicyGradient):
@@ -226,25 +286,8 @@ class REINFORCE(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        # Calculate loss and backpropagate
         self.policy_loss += -torch.sum(log_action_probs * (discount * returns))
-        # Update parameters
-        if self.rewards_processed + len(self.reward_buffer) >= self.batch_size:
-            self.policy_loss = self.policy_loss / (self.rewards_processed +
-                                                   len(self.reward_buffer))
-            self.policy_loss.backward()
-            self.policy_optim.step()
-            if self.policy_lr_sch.get_last_lr()[0] > self.min_pol_lr:
-                self.policy_lr_sch.step()
-            self.policy_optim.zero_grad()
-            self.rewards_processed = 0
-            policy_loss = self.policy_loss.item()
-            self.policy_loss = torch.zeros(1, device=self.device,
-                                           dtype=torch.float32)
-            return policy_loss, 0
-        else:
-            self.rewards_processed += len(self.reward_buffer)
-            return None, None
+        return self.update_network()
 
 
 class REINFORCE_Baseline(PolicyGradient):
@@ -276,9 +319,6 @@ class REINFORCE_Baseline(PolicyGradient):
         # calculate returns from rewards
         with torch.no_grad():
             returns[-1] = self.reward_buffer[-1]
-            # Code to handle non-termial cases
-            # if not terminal:
-            #     returns[-1] += self.discount*self.value_fn(state[-1]).item()
             for i in range(len(returns)-2, -1, -1):
                 returns[i] = self.reward_buffer[i] + self.discount*returns[i+1]
             # calculate TD error
@@ -293,39 +333,7 @@ class REINFORCE_Baseline(PolicyGradient):
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
         self.policy_loss += -torch.sum(discount * td_error * log_action_probs)
-        # Update parameters
-        if self.rewards_processed + len(self.reward_buffer) >= self.batch_size:
-            # Calculate mean loss
-            self.policy_loss = self.policy_loss / (self.rewards_processed +
-                                                   len(self.reward_buffer))
-            self.value_fn_loss = self.value_fn_loss / (self.rewards_processed +
-                                                       len(self.reward_buffer))
-            # Backpropagate
-            self.policy_loss.backward()
-            self.value_fn_loss.backward()
-            # Update parameters
-            self.policy_optim.step()
-            self.value_optim.step()
-            # Schedule learning rate
-            if self.policy_lr_sch.get_last_lr()[0] > self.min_pol_lr:
-                self.policy_lr_sch.step()
-            if self.value_lr_sch.get_last_lr()[0] > self.min_val_lr:
-                self.value_lr_sch.step()
-            # Clear gradients
-            self.policy_optim.zero_grad()
-            self.value_optim.zero_grad()
-            # Reset variables
-            policy_loss = self.policy_loss.item()
-            value_fn_loss = self.value_fn_loss.item()
-            self.rewards_processed = 0
-            self.policy_loss = torch.zeros(1, device=self.device,
-                                           dtype=torch.float32)
-            self.value_fn_loss = torch.zeros(1, device=self.device,
-                                             dtype=torch.float32)
-            return policy_loss, value_fn_loss
-        else:
-            self.rewards_processed += len(self.reward_buffer)
-            return None, None
+        return self.update_network()
 
 
 class ActorCritic(PolicyGradient):
@@ -353,18 +361,19 @@ class ActorCritic(PolicyGradient):
         returns = torch.tensor(
                               self.reward_buffer,
                               device=self.device, dtype=torch.float32)
+        sample_returns = returns.detach()
         # calculate value function
         state_values = self.value_fn(state[:samples])
         # calculate returns from rewards
         with torch.no_grad():
             returns[:-1] += self.discount * state_values[1:samples]
-            # Code to handle non-terminal cases
-            # if not terminal:
-            #     returns[-1] += self.discount*self.value_fn(state[-1]).item()
+            for i in range(sample_returns.numel()-2, -1, -1):
+                sample_returns[i] += self.discount * sample_returns[i+1]
 
             # calculate TD error
             td_error = returns - state_values
-        self.value_fn_loss += nn.functional.mse_loss(state_values, returns,
+        self.value_fn_loss += nn.functional.mse_loss(state_values,
+                                                     sample_returns,
                                                      reduction='sum')
         # calculate policy loss
         distribution = self.policy(state[:samples])
@@ -373,36 +382,4 @@ class ActorCritic(PolicyGradient):
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
         self.policy_loss += -torch.sum(discount * td_error * log_action_probs)
-        # Update parameters
-        if self.rewards_processed + len(self.reward_buffer) >= self.batch_size:
-            # Calculate mean loss
-            self.policy_loss = self.policy_loss / (self.rewards_processed +
-                                                   len(self.reward_buffer))
-            self.value_fn_loss = self.value_fn_loss / (self.rewards_processed +
-                                                       len(self.reward_buffer))
-            # Backpropagate
-            self.policy_loss.backward()
-            self.value_fn_loss.backward()
-            # Update parameters
-            self.policy_optim.step()
-            self.value_optim.step()
-            # Schedule learning rate
-            if self.policy_lr_sch.get_last_lr()[0] > self.min_pol_lr:
-                self.policy_lr_sch.step()
-            if self.value_lr_sch.get_last_lr()[0] > self.min_val_lr:
-                self.value_lr_sch.step()
-            # Clear gradients
-            self.policy_optim.zero_grad()
-            self.value_optim.zero_grad()
-            # Reset variables
-            policy_loss = self.policy_loss.item()
-            value_fn_loss = self.value_fn_loss.item()
-            self.rewards_processed = 0
-            self.policy_loss = torch.zeros(1, device=self.device,
-                                           dtype=torch.float32)
-            self.value_fn_loss = torch.zeros(1, device=self.device,
-                                             dtype=torch.float32)
-            return policy_loss, value_fn_loss
-        else:
-            self.rewards_processed += len(self.reward_buffer)
-            return None, None
+        return self.update_network()
