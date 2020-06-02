@@ -286,7 +286,7 @@ class REINFORCE(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        self.policy_loss += -torch.sum(log_action_probs * (discount * returns))
+        self.policy_loss += -torch.sum(discount * log_action_probs * returns)
         return self.update_network()
 
 

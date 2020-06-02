@@ -10,9 +10,8 @@ It also has notebooks that walk you through those algorithms comparing them and 
 ### Example Enviroments
 The repository contains examples implemented on the following environments
 
-    - MountainCar-v01
-    - MountainCarContinuous-v0
-    - CartPole-v0
+    - MountainCar-v0
+    - CartPole-v1
 
 ## Available Agents
 
@@ -24,6 +23,7 @@ The repository contains examples implemented on the following environments
 
 ### Deep RL 
     - REINFORCE
+    - REINFORCE with Baseline
     - Actor-Critic
 
 
@@ -41,3 +41,18 @@ The goal of the notebook is to
 - Compare various RL algorithms
 
 The MountainCar-v0 problem is used to illustrate various key insights.
+
+
+## 1. policy_gradient_notebook:
+### Description
+
+Policy gradient algorithms are a class of RL algorithms that are becoming very popular. They are widely adopted for multiple continuous control tasks like Robotics and Autonomous Driving.
+
+This notebook contains implementaions of some very popular basic policy gradients algorithms.
+
+Specifically the notebook compares the peformance of the following three algorithms and provides some insights.
+    - REINFORCE
+    - REINFORCE with Baseline
+    - Actor-Critic
+
+The example used in this notebook is the CartPole-v1 problem.
