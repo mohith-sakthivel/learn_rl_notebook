@@ -43,7 +43,7 @@ The goal of the notebook is to
 The MountainCar-v0 problem is used to illustrate various key insights.
 
 
-## 1. policy_gradient_notebook:
+## 2. policy_gradient_notebook:
 ### Description
 
 Policy gradient algorithms are a class of RL algorithms that are becoming very popular. They are widely adopted for multiple continuous control tasks like Robotics and Autonomous Driving.
