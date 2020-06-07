@@ -271,9 +271,6 @@ class REINFORCE(PolicyGradient):
         action = torch.tensor(
                               self.action_buffer[:samples],
                               device=self.device, dtype=torch.float32)
-        discount = torch.tensor(
-                                self.discount_buffer[:samples],
-                                device=self.device, dtype=torch.float32)
         returns = torch.zeros(len(self.reward_buffer), device=self.device,
                               dtype=torch.float32)
         # calculate returns from rewards
@@ -286,7 +283,7 @@ class REINFORCE(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        self.policy_loss += -torch.sum(discount * log_action_probs * returns)
+        self.policy_loss += -torch.sum(log_action_probs * returns)
         return self.update_network()
 
 
@@ -309,9 +306,6 @@ class REINFORCE_Baseline(PolicyGradient):
         action = torch.tensor(
                               self.action_buffer[:samples],
                               device=self.device, dtype=torch.float32)
-        discount = torch.tensor(
-                                self.discount_buffer[:samples],
-                                device=self.device, dtype=torch.float32)
         returns = torch.zeros(len(self.reward_buffer), device=self.device,
                               dtype=torch.float32)
         # calculate value function
@@ -332,7 +326,7 @@ class REINFORCE_Baseline(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        self.policy_loss += -torch.sum(discount * td_error * log_action_probs)
+        self.policy_loss += -torch.sum(td_error * log_action_probs)
         return self.update_network()
 
 
@@ -355,9 +349,6 @@ class ActorCritic(PolicyGradient):
         action = torch.tensor(
                               self.action_buffer[:samples],
                               device=self.device, dtype=torch.float32)
-        discount = torch.tensor(
-                                self.discount_buffer[:samples],
-                                device=self.device, dtype=torch.float32)
         returns = torch.tensor(
                               self.reward_buffer,
                               device=self.device, dtype=torch.float32)
@@ -381,5 +372,5 @@ class ActorCritic(PolicyGradient):
             log_action_probs = distribution.log_prob(action)
         else:
             log_action_probs = distribution.log_prob(action).sum(dim=-1)
-        self.policy_loss += -torch.sum(discount * td_error * log_action_probs)
+        self.policy_loss += -torch.sum(td_error * log_action_probs)
         return self.update_network()
