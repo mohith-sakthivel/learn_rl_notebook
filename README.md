@@ -51,6 +51,7 @@ Policy gradient algorithms are a class of RL algorithms that are becoming very p
 This notebook contains implementaions of some very popular basic policy gradients algorithms.
 
 Specifically the notebook compares the peformance of the following three algorithms and provides some insights.
+
     - REINFORCE
     - REINFORCE with Baseline
     - Actor-Critic
